@@ -1,0 +1,16 @@
+{
+  "name": "Adaptive Wiggle Cursor",
+  "description": "Adaptively enlarges your mouse cursor when you wiggle/shake it. The faster and longer you wiggle, the larger it progressively grows (up to 50% of screen) with smooth kinetic physics and accurate hotspot tracking.",
+  "uuid": "adaptive-wiggle-cursor@aditya",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "url": "https://github.com/aditya/adaptive-wiggle-cursor",
+  "version": 1,
+  "settings-schema": "org.gnome.shell.extensions.adaptive-wiggle-cursor"
+}

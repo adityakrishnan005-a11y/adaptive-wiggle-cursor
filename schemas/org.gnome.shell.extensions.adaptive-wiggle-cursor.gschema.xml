@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="adaptive-wiggle-cursor">
+  <schema id="org.gnome.shell.extensions.adaptive-wiggle-cursor" path="/org/gnome/shell/extensions/adaptive-wiggle-cursor/">
+    <key name="max-screen-ratio" type="d">
+      <default>0.50</default>
+      <summary>Maximum Screen Ratio</summary>
+      <description>Maximum cursor size as a fraction of the screen height (0.50 = 50%).</description>
+    </key>
+
+    <key name="trigger-sensitivity" type="d">
+      <default>1.0</default>
+      <summary>Trigger Sensitivity</summary>
+      <description>How easily shaking is detected. Higher = easier to trigger.</description>
+    </key>
+  </schema>
+</schemalist>

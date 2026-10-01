@@ -1,0 +1,6 @@
+/* Adaptive Wiggle Cursor Stylesheet */
+
+.adaptive-wiggle-cursor-halo {
+    border-radius: 9999px;
+    box-shadow: 0 0 24px 8px rgba(53, 132, 228, 0.45);
+}
