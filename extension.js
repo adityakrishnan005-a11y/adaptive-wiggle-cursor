@@ -119,9 +119,9 @@ function findCursorFile(themeName) {
 
 class ShakeDetector {
     constructor() {
-        this._interval = 1000; // ms — time window for shake detection
-        this._sensitivity = 3.5; // path/diagonal ratio threshold
-        this._history = [];    // {x, y, t} entries
+        this._interval = 800; // ms — time window for shake detection
+        this._sensitivity = 1.0; // multiplier from settings
+        this._history = []; // {x, y, t} entries
     }
 
     set interval(v) { this._interval = v; }
@@ -133,9 +133,12 @@ class ShakeDetector {
 
     /**
      * Feed a pointer position; returns true if a shake was detected.
-     * Implements the exact KDE algorithm from shakedetector.cpp.
+     * @param {number} x
+     * @param {number} y
+     * @param {number} timeMs
+     * @param {boolean} isAlreadyActive - whether the cursor is currently magnified
      */
-    update(x, y, timeMs) {
+    update(x, y, timeMs, isAlreadyActive = false) {
         // Prune old entries outside the time window
         const cutoff = timeMs - this._interval;
         let pruneIdx = 0;
@@ -144,11 +147,9 @@ class ShakeDetector {
         }
         if (pruneIdx > 0) this._history.splice(0, pruneIdx);
 
-        // KDE's sameSign: movements ≤ 1.5px tolerance count as "same direction"
-        const sameSign = (a, b) => (a >= -1.5 && b >= -1.5) || (a <= 1.5 && b <= 1.5);
+        // Movement tolerance: <= 2px counts as same direction
+        const sameSign = (a, b) => (a >= -2.0 && b >= -2.0) || (a <= 2.0 && b <= 2.0);
 
-        // If we have ≥ 2 entries and the new movement is in the same direction
-        // as the last segment, just update the last entry (extend the stroke).
         if (this._history.length >= 2) {
             const last = this._history[this._history.length - 1];
             const prev = this._history[this._history.length - 2];
@@ -161,10 +162,10 @@ class ShakeDetector {
             }
         }
 
-        // Direction changed → push a new entry
+        // Direction changed → push a new entry (reversal stroke)
         this._history.push({ x, y, t: timeMs });
 
-        // Compute path distance and bounding box
+        // Compute total path distance and bounding box
         let left = this._history[0].x, right = left;
         let top = this._history[0].y, bottom = top;
         let distance = 0;
@@ -181,12 +182,32 @@ class ShakeDetector {
         }
 
         const diagonal = Math.hypot(right - left, bottom - top);
-        if (diagonal < 45.0) return false;
 
-        const shakeFactor = distance / diagonal;
-        if (shakeFactor > this._sensitivity) {
-            this._history = [];
-            return true;
+        if (isAlreadyActive) {
+            // While already enlarged: lighter threshold to sustain and continue growing
+            if (diagonal < 30.0 || distance < 120.0 || this._history.length < 3) return false;
+            const threshold = Math.max(2.2, 3.8 / this._sensitivity);
+            if ((distance / diagonal) > threshold) {
+                this._history = [];
+                return true;
+            }
+        } else {
+            // First-time trigger: requires genuine deliberate VIGOROUS wiggling
+            // 1. Must have at least 4 direction reversals in the window
+            if (this._history.length < 4) return false;
+            // 2. Must have moved at least 260px total path in the window (vigorous speed)
+            if (distance < 260.0) return false;
+            // 3. Diagonal must be bounded (between 50px and 380px) - wiggling in place, not huge sweeps
+            if (diagonal < 50.0 || diagonal > 380.0) return false;
+
+            // 4. Required ratio scaled by sensitivity (default sensitivity 1.0 -> required ratio 5.2)
+            const requiredRatio = Math.max(3.5, 5.2 / this._sensitivity);
+            const shakeFactor = distance / diagonal;
+
+            if (shakeFactor > requiredRatio) {
+                this._history = [];
+                return true;
+            }
         }
 
         return false;
@@ -210,7 +231,7 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
             }),
             this._settings.connect('changed::trigger-sensitivity', () => {
                 this._triggerSensitivity = this._settings.get_double('trigger-sensitivity');
-                this._shakeDetector.sensitivity = Math.max(1.8, 4.5 - this._triggerSensitivity * 1.5);
+                this._shakeDetector.sensitivity = this._triggerSensitivity;
             }),
         ];
 
@@ -223,10 +244,10 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
             this._rebuildActor();
         });
 
-        // ── Shake detector (KDE algorithm) ──
+        // ── Shake detector ──
         this._shakeDetector = new ShakeDetector();
-        this._shakeDetector.interval = 1000;
-        this._shakeDetector.sensitivity = Math.max(1.8, 4.5 - this._triggerSensitivity * 1.5);
+        this._shakeDetector.interval = 800;
+        this._shakeDetector.sensitivity = this._triggerSensitivity;
 
         // ── KDE-style magnification state ──
         this._baseMag = 2.5;       // Initial magnification on first shake
@@ -353,7 +374,8 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
         const [px, py] = global.get_pointer();
         const now = GLib.get_monotonic_time() / 1000.0; // ms
 
-        if (this._shakeDetector.update(px, py, now)) {
+        const isCurrentlyActive = this._currentMag > 1.05 || this._targetMag > 1.05;
+        if (this._shakeDetector.update(px, py, now, isCurrentlyActive)) {
             this._inflate();
         }
 

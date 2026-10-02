@@ -22,16 +22,16 @@ export default class AdaptiveWiggleCursorPreferences extends ExtensionPreference
         });
         page.add(group);
 
-        // Max Screen Ratio
+        // Max Screen Ratio (50% to 100%)
         const maxRatioRow = new Adw.SpinRow({
             title: _('Maximum Cursor Size'),
-            subtitle: _('Caps cursor growth as a percentage of screen height'),
+            subtitle: _('Caps cursor growth as a percentage of screen height (50% to 100%)'),
             adjustment: new Gtk.Adjustment({
-                lower: 15,
-                upper: 75,
+                lower: 50,
+                upper: 100,
                 step_increment: 5,
                 page_increment: 10,
-                value: Math.round(settings.get_double('max-screen-ratio') * 100),
+                value: Math.max(50, Math.min(100, Math.round(settings.get_double('max-screen-ratio') * 100))),
             }),
         });
         maxRatioRow.connect('notify::value', () => {
@@ -42,12 +42,12 @@ export default class AdaptiveWiggleCursorPreferences extends ExtensionPreference
         // Trigger Sensitivity
         const sensitivityRow = new Adw.SpinRow({
             title: _('Trigger Sensitivity'),
-            subtitle: _('Higher values make shake detection easier to trigger'),
+            subtitle: _('Adjusts initial shake vigor required (higher = easier, lower = requires more vigorous wiggling)'),
             adjustment: new Gtk.Adjustment({
-                lower: 0.5,
+                lower: 0.2,
                 upper: 2.0,
                 step_increment: 0.1,
-                page_increment: 0.5,
+                page_increment: 0.2,
                 value: settings.get_double('trigger-sensitivity'),
             }),
             digits: 1,
