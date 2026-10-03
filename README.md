@@ -2,6 +2,9 @@
 
 An adaptive, high-performance GNOME Shell extension that enlarges your mouse cursor when you shake/wiggle it. Built from scratch using KDE Plasma's proven shake-to-find physics algorithm and high-fidelity native Xcursor theme rendering.
 
+> [!NOTE]
+> This project was a personal side job and is thus vibe coded a lot and uses a lot of AI because I made it primarily for myself. You may rest assured that this project will continue receiving updates as I myself am using it.
+
 ---
 
 ## ✨ Features
