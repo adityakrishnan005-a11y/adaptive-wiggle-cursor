@@ -1,6 +1,6 @@
 {
   "name": "Adaptive Wiggle Cursor",
-  "description": "Adaptively enlarges your mouse cursor when you wiggle/shake it. The faster and longer you wiggle, the larger it progressively grows (up to 50% of screen) with smooth kinetic physics and accurate hotspot tracking.",
+  "description": "Shake to find mouse cursor with KDE-style kinetic physics, adaptive stepped growth, and exact cursor theme preservation.",
   "uuid": "adaptive-wiggle-cursor@aditya",
   "shell-version": [
     "45",
