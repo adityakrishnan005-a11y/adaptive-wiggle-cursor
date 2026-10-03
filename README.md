@@ -1,6 +1,17 @@
 # Adaptive Wiggle Cursor
 
+<p align="left">
+  <a href="https://extensions.gnome.org"><img src="https://img.shields.io/badge/GNOME%20Shell-45%20|%2046%20|%2047%20|%2048%20|%2049%20|%2050-3584e4?style=flat-square&logo=gnome&logoColor=white" alt="GNOME Shell 45-50"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/Session-Wayland%20%7C%20X11-purple.svg?style=flat-square" alt="Wayland & X11">
+  <a href="https://github.com/adityakrishnan005-a11y/adaptive-wiggle-cursor/releases"><img src="https://img.shields.io/github/v/release/adityakrishnan005-a11y/adaptive-wiggle-cursor?style=flat-square&color=orange" alt="GitHub Release"></a>
+</p>
+
 An adaptive, high-performance GNOME Shell extension that enlarges your mouse cursor when you shake/wiggle it. Built from scratch using KDE Plasma's proven shake-to-find physics algorithm and high-fidelity native Xcursor theme rendering.
+
+> [!NOTE]
+> **Author's Disclaimer & Maintenance Commitment**:  
+> This project was created as a personal side venture and has been extensively vibe-coded leveraging modern AI tooling, built first and foremost to satisfy my own daily desktop computing needs. Rest assured that the code has been crafted with rigorous attention to detail and thoroughly tested. Because I actively rely on this extension every single day across my own machines, this project will continue to receive regular maintenance, performance optimizations, and timely compatibility updates for upcoming GNOME Shell releases. Community feedback, suggestions, and pull requests are always warmly welcomed!
 
 ---
 
