@@ -197,8 +197,8 @@ class ShakeDetector {
             if (this._history.length < 4) return false;
             // 2. Must have moved at least 260px total path in the window (vigorous speed)
             if (distance < 260.0) return false;
-            // 3. Diagonal must be bounded (between 50px and 380px) - wiggling in place, not huge sweeps
-            if (diagonal < 50.0 || diagonal > 380.0) return false;
+            // 3. Diagonal must be at least 50px (not tiny jitters)
+            if (diagonal < 50.0) return false;
 
             // 4. Required ratio scaled by sensitivity (default sensitivity 1.0 -> required ratio 5.2)
             const requiredRatio = Math.max(3.5, 5.2 / this._sensitivity);
@@ -254,6 +254,7 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
         this._overMag = 0.8;       // Additional magnification per subsequent shake stroke
         this._targetMag = 1.0;     // Target we're animating toward
         this._currentMag = 1.0;    // Current rendered magnification
+        this._cursorInhibited = false;
 
         // ── Animation state ──
         this._animStartMag = 1.0;
@@ -274,6 +275,36 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
         this._posSignalId = this._cursorTracker.connect('position-invalidated', () => {
             this._onPointerMoved();
         });
+    }
+
+    _hideHardwareCursor() {
+        if (this._cursorInhibited || !this._cursorTracker) return;
+        try {
+            if (typeof this._cursorTracker.inhibit_cursor_visibility === 'function') {
+                this._cursorTracker.inhibit_cursor_visibility();
+                this._cursorInhibited = true;
+            } else if (typeof this._cursorTracker.set_pointer_visible === 'function') {
+                this._cursorTracker.set_pointer_visible(false);
+                this._cursorInhibited = true;
+            }
+        } catch (e) {
+            console.warn('[WiggleCursor] Failed to inhibit cursor visibility:', e);
+        }
+    }
+
+    _showHardwareCursor() {
+        if (!this._cursorInhibited || !this._cursorTracker) return;
+        try {
+            if (typeof this._cursorTracker.uninhibit_cursor_visibility === 'function') {
+                this._cursorTracker.uninhibit_cursor_visibility();
+                this._cursorInhibited = false;
+            } else if (typeof this._cursorTracker.set_pointer_visible === 'function') {
+                this._cursorTracker.set_pointer_visible(true);
+                this._cursorInhibited = false;
+            }
+        } catch (e) {
+            console.warn('[WiggleCursor] Failed to uninhibit cursor visibility:', e);
+        }
     }
 
     // ── Cursor Theme Loading ──
@@ -462,6 +493,7 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
         this._actor.set_position(px, py);
 
         if (mag > 1.01 && this._cursorInfo) {
+            this._hideHardwareCursor();
             this._actor.show();
             const baseCursorH = this._ifaceSettings.get_int('cursor-size') || 24;
             const nativeH = this._cursorInfo.height || 24;
@@ -472,12 +504,15 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
             this._actor.set_scale(1, 1);
             this._actor.opacity = 0;
             this._actor.hide();
+            this._showHardwareCursor();
         }
     }
 
     // ── Cleanup ──
 
     disable() {
+        this._showHardwareCursor();
+
         if (this._animTimerId) {
             GLib.Source.remove(this._animTimerId);
             this._animTimerId = null;
