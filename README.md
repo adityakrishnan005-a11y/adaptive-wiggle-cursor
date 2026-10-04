@@ -99,6 +99,16 @@ The extension monitors mouse pointer coordinates through `Meta.CursorTracker`. I
 
 ---
 
+## 🤝 Contributing
+
+Contributions are warmly welcomed and greatly appreciated! Whether you want to fix a bug, suggest an enhancement, refine the shake physics, or improve documentation:
+
+- 📖 Check out our **[Contributing Guidelines](CONTRIBUTING.md)** for instructions on local development, testing, viewing live logs, and opening pull requests.
+- 📜 Please review our **[Code of Conduct](CODE_OF_CONDUCT.md)** to keep interactions welcoming and inclusive.
+- 🐛 Found a bug or have an idea? Open an issue via our **[Issue Tracker](https://github.com/adityakrishnan005-a11y/adaptive-wiggle-cursor/issues)** using the provided templates.
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).

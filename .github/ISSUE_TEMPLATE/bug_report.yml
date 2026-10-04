@@ -1,0 +1,87 @@
+name: "🐛 Bug Report"
+description: "File a bug report to help us improve Adaptive Wiggle Cursor"
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Bug Description"
+      description: "A clear and concise description of what the bug is."
+      placeholder: "When I shake the mouse, the cursor..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Steps to Reproduce"
+      description: "Steps to reproduce the behavior."
+      placeholder: |
+        1. Open GNOME Settings
+        2. Set cursor theme to '...'
+        3. Wiggle mouse rapidly back and forth
+        4. See error / unexpected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected Behavior"
+      description: "A clear and concise description of what you expected to happen."
+      placeholder: "The cursor should enlarge to 2.5x and then smoothly deflate back."
+    validations:
+      required: true
+
+  - type: input
+    id: gnome_version
+    attributes:
+      label: "GNOME Shell Version"
+      description: "Run `gnome-shell --version` in terminal."
+      placeholder: "e.g., GNOME Shell 48.0 or 50.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: session_type
+    attributes:
+      label: "Session Type"
+      description: "Run `echo $XDG_SESSION_TYPE` in terminal."
+      options:
+        - "Wayland"
+        - "X11"
+        - "Other / Unknown"
+    validations:
+      required: true
+
+  - type: input
+    id: cursor_theme
+    attributes:
+      label: "Active Cursor Theme"
+      description: "Run `gsettings get org.gnome.desktop.interface cursor-theme`."
+      placeholder: "e.g., Bibata-Modern-DodgerBlue, Adwaita, DMZ-White"
+    validations:
+      required: false
+
+  - type: input
+    id: linux_distro
+    attributes:
+      label: "Linux Distribution"
+      placeholder: "e.g., Fedora 43, Debian 13, Ubuntu 24.04, Arch Linux"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant Logs / Terminal Output"
+      description: "Paste relevant output from `journalctl -b --no-pager | grep -i 'adaptive-wiggle\\|WiggleCursor\\|gnome-shell.*JS'`."
+      render: shell
+    validations:
+      required: false
