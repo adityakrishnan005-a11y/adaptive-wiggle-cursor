@@ -2,15 +2,18 @@
  * Adaptive Wiggle Cursor — GNOME Shell Extension (built from scratch)
  *
  * Replicates KDE Plasma's ShakeCursor algorithm:
- *   1. Tracks pointer motion within a sliding time window (1000ms).
+ *   1. Tracks pointer motion within a sliding time window (800ms).
  *   2. Detects direction reversals; when the path-distance/bounding-box-diagonal
  *      ratio exceeds a sensitivity threshold → shake detected.
- *   3. First shake → cursor enlarges to base magnification (3×).
- *   4. Each additional shake while already enlarged → +1× more (overMagnification).
- *   5. 2 seconds after last shake → smoothly animates back to 1.0× (deflate).
+ *   3. First shake → cursor enlarges to base magnification (2.5×).
+ *   4. Each additional shake while already enlarged → +0.8× more (overMagnification).
+ *   5. 1.8 seconds after last shake → smoothly animates back to 1.0× (deflate).
  *
- * Rendering uses St.ImageContent + Xcursor binary parsing so the user's exact
- * cursor theme (Bibata, Adwaita, etc.) is preserved at any scale with exact tip hotspot.
+ * Rendering pipeline (priority order):
+ *   1. SVG cursors (KDE Plasma 6.2+ cursors_scalable/ format) — re-rasterized at
+ *      exact target pixel size via librsvg for pixel-perfect crisp edges at any scale.
+ *   2. Xcursor binary parsing — fallback for legacy themes (Bibata, Adwaita, etc.)
+ *      using St.ImageContent + Cogl with exact hotspot preservation.
  */
 
 import Clutter from 'gi://Clutter';
@@ -21,8 +24,214 @@ import Graphene from 'gi://Graphene';
 import Meta from 'gi://Meta';
 import St from 'gi://St';
 import Gio from 'gi://Gio';
+import GdkPixbuf from 'gi://GdkPixbuf';
+import Rsvg from 'gi://Rsvg';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+
+// ─── Theme Inheritance & Location ───────────────────────────────────────────
+
+/**
+ * Traverses index.theme files to resolve the full inheritance chain
+ * (e.g. ['Bibata-Modern-DodgerBlue', 'hicolor', 'default', 'Adwaita']).
+ */
+function resolveThemeInheritance(themeName) {
+    const searchRoots = [
+        GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share', 'icons']),
+        GLib.build_filenamev([GLib.get_home_dir(), '.icons']),
+        '/usr/share/icons',
+        '/usr/local/share/icons',
+    ];
+
+    const result = [];
+    const queue = [themeName];
+    const seen = new Set();
+
+    while (queue.length > 0) {
+        const t = queue.shift();
+        if (!t || seen.has(t)) continue;
+        seen.add(t);
+        result.push(t);
+
+        for (const root of searchRoots) {
+            const indexPath = GLib.build_filenamev([root, t, 'index.theme']);
+            if (GLib.file_test(indexPath, GLib.FileTest.EXISTS)) {
+                try {
+                    const [ok, bytes] = GLib.file_get_contents(indexPath);
+                    if (ok && bytes) {
+                        const text = new TextDecoder().decode(bytes);
+                        const match = text.match(/^\s*Inherits\s*=\s*(.+)$/im);
+                        if (match) {
+                            const parents = match[1]
+                                .split(',')
+                                .map(s => s.trim().replace(/^["']|["']$/g, ''))
+                                .filter(Boolean);
+                            for (const p of parents) {
+                                if (!seen.has(p)) queue.push(p);
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    for (const fallback of ['default', 'Adwaita', 'breeze_cursors', 'breeze', 'DMZ-White']) {
+        if (!seen.has(fallback)) result.push(fallback);
+    }
+
+    return result;
+}
+
+// ─── SVG Cursor Parser (KDE Plasma 6.2+ Format & Vector Assets) ─────────────
+
+/**
+ * Searches for an SVG cursor in theme directories.
+ * Supports:
+ *   1. KDE Plasma 6.2+ cursors_scalable/<name>/ metadata.json + SVG
+ *   2. cursors_scalable/<name>.svg
+ *   3. svg/<name>.svg or src/<name>.svg
+ */
+function findSvgCursor(themeHierarchy) {
+    const searchRoots = [
+        GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share', 'icons']),
+        GLib.build_filenamev([GLib.get_home_dir(), '.icons']),
+        '/usr/share/icons',
+        '/usr/local/share/icons',
+    ];
+    const cursorNames = ['left_ptr', 'default', 'arrow'];
+
+    for (const t of themeHierarchy) {
+        for (const root of searchRoots) {
+            const themeDir = GLib.build_filenamev([root, t]);
+            if (!GLib.file_test(themeDir, GLib.FileTest.IS_DIR)) continue;
+
+            const scalableDir = GLib.build_filenamev([themeDir, 'cursors_scalable']);
+            if (GLib.file_test(scalableDir, GLib.FileTest.IS_DIR)) {
+                for (const name of cursorNames) {
+                    // Subfolder format: cursors_scalable/<name>/metadata.json + <file>.svg
+                    const subDir = GLib.build_filenamev([scalableDir, name]);
+                    if (GLib.file_test(subDir, GLib.FileTest.IS_DIR)) {
+                        const metaPath = GLib.build_filenamev([subDir, 'metadata.json']);
+                        let svgFile = null;
+                        let hotX = 0, hotY = 0, nominalSize = 24;
+
+                        if (GLib.file_test(metaPath, GLib.FileTest.EXISTS)) {
+                            try {
+                                const [ok, bytes] = GLib.file_get_contents(metaPath);
+                                if (ok && bytes) {
+                                    const meta = JSON.parse(new TextDecoder().decode(bytes));
+                                    if (meta.filename) svgFile = GLib.build_filenamev([subDir, meta.filename]);
+                                    if (meta.hotspot_x !== undefined) hotX = meta.hotspot_x;
+                                    if (meta.hotspot_y !== undefined) hotY = meta.hotspot_y;
+                                    if (meta.nominal_size) nominalSize = meta.nominal_size;
+                                }
+                            } catch (e) {}
+                        }
+
+                        if (!svgFile) {
+                            const candidate = GLib.build_filenamev([subDir, `${name}.svg`]);
+                            if (GLib.file_test(candidate, GLib.FileTest.EXISTS)) svgFile = candidate;
+                        }
+
+                        if (svgFile && GLib.file_test(svgFile, GLib.FileTest.EXISTS)) {
+                            return { svgFile, hotX, hotY, nominalSize, themeDir };
+                        }
+                    }
+
+                    // Direct format: cursors_scalable/<name>.svg
+                    const directSvg = GLib.build_filenamev([scalableDir, `${name}.svg`]);
+                    if (GLib.file_test(directSvg, GLib.FileTest.EXISTS)) {
+                        return { svgFile: directSvg, hotX: 0, hotY: 0, nominalSize: 24, themeDir };
+                    }
+                }
+            }
+
+            // Alternative folders: svg/ or src/
+            for (const folder of ['svg', 'src']) {
+                const altDir = GLib.build_filenamev([themeDir, folder]);
+                if (GLib.file_test(altDir, GLib.FileTest.IS_DIR)) {
+                    for (const name of cursorNames) {
+                        const altSvg = GLib.build_filenamev([altDir, `${name}.svg`]);
+                        if (GLib.file_test(altSvg, GLib.FileTest.EXISTS)) {
+                            return { svgFile: altSvg, hotX: 0, hotY: 0, nominalSize: 24, themeDir };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Dynamically rasterizes an SVG cursor at high resolution (targetSize px)
+ * and extracts its tip hotspot for pixel-perfect clarity.
+ */
+function parseSvgCursor(svgPath, metaInfo, targetSize = 512) {
+    try {
+        let intrinsicW = 24, intrinsicH = 24;
+        try {
+            const handle = Rsvg.Handle.new_from_file(svgPath);
+            const [hasDim, w, h] = handle.get_intrinsic_size_in_pixels();
+            if (hasDim && w > 0 && h > 0) {
+                intrinsicW = w;
+                intrinsicH = h;
+            }
+        } catch (e) {
+            console.warn('[WiggleCursor] Rsvg intrinsic check:', e);
+        }
+
+        let hotX = metaInfo?.hotX ?? 0;
+        let hotY = metaInfo?.hotY ?? 0;
+        let nominalSize = metaInfo?.nominalSize || intrinsicW || 24;
+
+        // If hotspot coordinates were not in metadata.json, look for <rect id="hotspot"> in the SVG
+        if (!metaInfo?.hotX && !metaInfo?.hotY) {
+            try {
+                const [ok, svgBytes] = GLib.file_get_contents(svgPath);
+                if (ok && svgBytes) {
+                    const text = new TextDecoder().decode(svgBytes);
+                    const m = text.match(/<[^>]*id=["\x27]hotspot["\x27][^>]*>/i);
+                    if (m) {
+                        const mx = m[0].match(/\bx=["\x27]([\d.]+)["\x27]/i);
+                        const my = m[0].match(/\by=["\x27]([\d.]+)["\x27]/i);
+                        if (mx) hotX = parseFloat(mx[1]);
+                        if (my) hotY = parseFloat(my[1]);
+                    }
+                }
+            } catch (e) {}
+        }
+
+        const aspect = intrinsicH > 0 ? intrinsicW / intrinsicH : 1.0;
+        const rasterW = targetSize;
+        const rasterH = Math.round(targetSize / aspect);
+
+        const pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(svgPath, rasterW, rasterH, true);
+        if (!pixbuf) return null;
+
+        const actualW = pixbuf.get_width();
+        const actualH = pixbuf.get_height();
+        const scaleX = actualW / nominalSize;
+        const scaleY = actualH / nominalSize;
+
+        const scaledHotX = Math.round(hotX * scaleX);
+        const scaledHotY = Math.round(hotY * scaleY);
+        const rgbaPixels = pixbuf.get_pixels();
+
+        return {
+            width: actualW,
+            height: actualH,
+            xhot: scaledHotX,
+            yhot: scaledHotY,
+            rgbaPixels,
+            isSvg: true,
+        };
+    } catch (e) {
+        console.warn('[WiggleCursor] Failed to parse SVG cursor:', e);
+        return null;
+    }
+}
 
 // ─── Xcursor Binary Parser ──────────────────────────────────────────────────
 
@@ -85,6 +294,7 @@ function parseXcursorFile(filePath) {
             xhot: best.xhot,
             yhot: best.yhot,
             rgbaPixels: rgba,
+            isSvg: false,
         };
     } catch (e) {
         console.warn('[WiggleCursor] Failed to parse Xcursor:', e);
@@ -93,23 +303,26 @@ function parseXcursorFile(filePath) {
 }
 
 /**
- * Locates the left_ptr cursor file for a given theme name.
+ * Locates the left_ptr cursor file for a given theme name or inheritance hierarchy.
  */
-function findCursorFile(themeName) {
-    const dirs = [
-        GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share', 'icons', themeName, 'cursors']),
-        GLib.build_filenamev([GLib.get_home_dir(), '.icons', themeName, 'cursors']),
-        GLib.build_filenamev(['/usr', 'share', 'icons', themeName, 'cursors']),
-        GLib.build_filenamev(['/usr', 'share', 'icons', 'default', 'cursors']),
-        GLib.build_filenamev(['/usr', 'share', 'icons', 'Adwaita', 'cursors']),
+function findCursorFile(themeHierarchy) {
+    const list = Array.isArray(themeHierarchy) ? themeHierarchy : [themeHierarchy, 'default', 'Adwaita'];
+    const searchRoots = [
+        GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share', 'icons']),
+        GLib.build_filenamev([GLib.get_home_dir(), '.icons']),
+        '/usr/share/icons',
+        '/usr/local/share/icons',
     ];
     const names = ['left_ptr', 'default', 'arrow'];
 
-    for (const dir of dirs) {
-        if (!GLib.file_test(dir, GLib.FileTest.IS_DIR)) continue;
-        for (const name of names) {
-            const p = GLib.build_filenamev([dir, name]);
-            if (GLib.file_test(p, GLib.FileTest.EXISTS)) return p;
+    for (const t of list) {
+        for (const root of searchRoots) {
+            const dir = GLib.build_filenamev([root, t, 'cursors']);
+            if (!GLib.file_test(dir, GLib.FileTest.IS_DIR)) continue;
+            for (const name of names) {
+                const p = GLib.build_filenamev([dir, name]);
+                if (GLib.file_test(p, GLib.FileTest.EXISTS)) return p;
+            }
         }
     }
     return null;
@@ -311,8 +524,36 @@ export default class AdaptiveWiggleCursorExtension extends Extension {
 
     _loadCursorTheme() {
         const themeName = this._ifaceSettings.get_string('cursor-theme') || 'default';
-        const file = findCursorFile(themeName);
-        this._cursorInfo = file ? parseXcursorFile(file) : null;
+        const themeHierarchy = resolveThemeInheritance(themeName);
+
+        // Optimal raster size based on monitor resolution
+        const monitor = Main.layoutManager.currentMonitor ?? Main.layoutManager.primaryMonitor;
+        const screenH = monitor ? monitor.height : 1080;
+        const targetRasterSize = Math.max(512, Math.min(1024, Math.round(screenH * (this._maxScreenRatio || 0.75))));
+
+        this._cursorInfo = null;
+
+        // 1. Try modern SVG vector cursor first (KDE Plasma 6.2+ cursors_scalable/ format)
+        try {
+            const svgInfo = findSvgCursor(themeHierarchy);
+            if (svgInfo) {
+                this._cursorInfo = parseSvgCursor(svgInfo.svgFile, svgInfo, targetRasterSize);
+                if (this._cursorInfo) {
+                    console.log(`[WiggleCursor] Loaded vector SVG cursor (${this._cursorInfo.width}x${this._cursorInfo.height}) for theme "${themeName}"`);
+                }
+            }
+        } catch (e) {
+            console.warn('[WiggleCursor] SVG cursor loading attempt failed:', e);
+        }
+
+        // 2. Fall back to classic Xcursor binary parser
+        if (!this._cursorInfo) {
+            const file = findCursorFile(themeHierarchy);
+            this._cursorInfo = file ? parseXcursorFile(file) : null;
+            if (this._cursorInfo) {
+                console.log(`[WiggleCursor] Loaded Xcursor binary (${this._cursorInfo.width}x${this._cursorInfo.height}) for theme "${themeName}"`);
+            }
+        }
 
         if (!this._cursorInfo) {
             console.warn('[WiggleCursor] Could not load cursor theme:', themeName);

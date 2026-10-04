@@ -20,8 +20,10 @@ An adaptive, high-performance GNOME Shell extension that enlarges your mouse cur
 - 🎯 **KDE Plasma Shake Physics**: Accurately detects deliberate, vigorous mouse wiggling using a sliding time-window path-to-diagonal ratio algorithm. Rejects casual mouse navigation and broad sweeps.
 - 📈 **Adaptive Stepped Growth**: Shaking your mouse enlarges the cursor to an initial prominent size ($2.5\times$). Continuing to shake dynamically steps the size up in increments up to **50%–100% of your screen height**.
 - 🌊 **Smooth Deflation**: Automatically and smoothly scales back down to normal size over $180\text{ms}$ using `InOutCubic` easing after $1.8\text{s}$ of inactivity.
-- 🎨 **Exact Theme Preservation**: Parses your system's active Xcursor binary theme (e.g. *Bibata-Modern*, *Adwaita*, *Yaru*, etc.) and renders the high-resolution RGBA pixel data via `St.ImageContent` and Cogl. Your cursor colors, shape, and transparency are preserved identically.
-- 🎯 **Pixel-Perfect Hotspot Alignment**: Uses sub-pixel Graphene pivot tracking so the pointer tip remains strictly locked to your hardware mouse coordinates at any magnification level.
+- 🎨 **Dual Rendering Pipeline (SVG + Xcursor)**:
+  - **Vector SVG Support**: Native support for modern scalable cursor themes (including the KDE Plasma 6.2+ `cursors_scalable/` specification with `metadata.json`). Dynamically rasterizes vector shapes at high DPI ($512\text{px}\dots 1024\text{px}$) via `librsvg` for razor-sharp edges even at maximum screen heights.
+  - **Xcursor Binary Fallback**: Seamless fallback for classic themes (e.g. *Bibata*, *Adwaita*, *Yaru*, etc.) with automatic `index.theme` inheritance chain resolution (`Inherits=...`).
+- 🎯 **Pixel-Perfect Hotspot Alignment**: Uses sub-pixel Graphene pivot tracking and SVG `#hotspot` detection so the pointer tip remains strictly locked to your hardware mouse coordinates at any magnification level.
 - 👻 **Hardware Pointer Hiding**: Automatically inhibits the underlying system cursor while magnified so you never see a smaller cursor poking out underneath.
 - ⚙️ **Libadwaita Preferences**: Easily adjust trigger sensitivity and maximum screen ratio via the GNOME Extensions settings dialog.
 - ⚡ **Zero Idle Overhead**: Pure event-driven implementation connected to `Meta.CursorTracker`. Consumes 0% CPU when the cursor is idle.
@@ -91,11 +93,11 @@ The extension monitors mouse pointer coordinates through `Meta.CursorTracker`. I
   $$\text{ShakeFactor} = \frac{\text{Total Path Distance}}{\text{Bounding Box Diagonal}}$$
 - Triggers initial enlargement when reversal count $\ge 4$, path distance $\ge 260\text{px}$, and $\text{ShakeFactor} > \text{Threshold}$.
 
-### 2. Rendering Pipeline
-- Locates and parses the active cursor theme binary from `~/.local/share/icons/`, `~/.icons/`, or `/usr/share/icons/`.
-- Extracts the highest available resolution image and its exact hotspot $(x_{\text{hot}}, y_{\text{hot}})$.
-- Constructs an `St.ImageContent` actor attached to GNOME Shell's `Main.uiGroup`.
-- Temporarily inhibits system pointer visibility via Mutter's cursor tracker while active.
+### 2. Dual Rendering Pipeline
+- **Theme Resolution**: Follows the `Inherits=` hierarchy defined in `index.theme` to find cursor assets across user and system icon paths.
+- **SVG Vector Rendering (Preferred)**: When a theme provides scalable assets (`cursors_scalable/`, `svg/`, or `src/`), the vector is dynamically rasterized at high resolution ($512\text{px}\dots 1024\text{px}$) via `librsvg`. Hotspots are extracted from `metadata.json` or `<rect id="hotspot">` elements.
+- **Xcursor Binary Fallback**: When only classic binary files exist, extracts the highest-resolution pre-rendered bitmap and hotspot coordinates.
+- **Display Output**: Constructs an `St.ImageContent` actor attached to GNOME Shell's `Main.uiGroup`, aligning the tip pivot with Graphene points, and temporarily inhibits the hardware pointer to prevent double-cursor artifacts.
 
 ---
 
