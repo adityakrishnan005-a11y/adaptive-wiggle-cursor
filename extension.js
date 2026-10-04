@@ -120,7 +120,8 @@ function findSvgCursor(themeHierarchy) {
                             try {
                                 const [ok, bytes] = GLib.file_get_contents(metaPath);
                                 if (ok && bytes) {
-                                    const meta = JSON.parse(new TextDecoder().decode(bytes));
+                                    const rawMeta = JSON.parse(new TextDecoder().decode(bytes));
+                                    const meta = Array.isArray(rawMeta) ? (rawMeta[0] || {}) : rawMeta;
                                     if (meta.filename) svgFile = GLib.build_filenamev([subDir, meta.filename]);
                                     if (meta.hotspot_x !== undefined) hotX = meta.hotspot_x;
                                     if (meta.hotspot_y !== undefined) hotY = meta.hotspot_y;
